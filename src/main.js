@@ -126,6 +126,9 @@ async function displayCardsDynamically() {
         hike.details || `Located in ${hike.city}.`;
       newcard.querySelector(".card-length").textContent = hike.length;
 
+      // 👇 ADD THIS LINE TO SET THE IMAGE SOURCE
+      newcard.querySelector(".card-image").src = `./images/${hike.code}.jpg`;
+
       // Attach the new card to the container
       document.getElementById("hikes-go-here").appendChild(newcard);
     });

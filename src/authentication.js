@@ -7,9 +7,7 @@
 // -------------------------------------------------------------
 
 // Import the initialized Firebase Authentication object
-import { db } from "/src/firebaseConfig.js";
-import { doc, setDoc } from "firebase/firestore";
-import { auth } from "/src/firebaseConfig.js";
+import { auth, db } from "/src/firebaseConfig.js";
 
 // Import specific functions from the Firebase Auth SDK
 import {
@@ -19,6 +17,7 @@ import {
   onAuthStateChanged,
   signOut,
 } from "firebase/auth";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 
 // -------------------------------------------------------------
 // loginUser(email, password)
@@ -34,7 +33,24 @@ import {
 //   await loginUser("user@example.com", "password123");
 // -------------------------------------------------------------
 export async function loginUser(email, password) {
-  return signInWithEmailAndPassword(auth, email, password);
+  const cred = await signInWithEmailAndPassword(auth, email, password);
+  // Persist last login time in Firestore (users/{uid})
+  try {
+    const { uid, displayName } = cred.user || {};
+    await setDoc(
+      doc(db, "users", uid),
+      {
+        uid,
+        email: email,
+        displayName: displayName || null,
+        lastLoginAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  } catch (e) {
+    console.warn("Failed to update lastLoginAt:", e);
+  }
+  return cred;
 }
 
 // -------------------------------------------------------------
@@ -53,27 +69,30 @@ export async function loginUser(email, password) {
 //   const user = await signupUser("Alice", "alice@email.com", "secret");
 // -------------------------------------------------------------
 export async function signupUser(name, email, password) {
-  const userCredential = await createUserWithEmailAndPassword(
-    auth,
-    email,
-    password
-  );
-  const user = userCredential.user; // Get the user object
-  await updateProfile(user, { displayName: name });
-
-  try {
-    await setDoc(doc(db, "users", user.uid), {
-      name: name,
-      email: email,
-      country: "Canada", // Default value
-      school: "BCIT", // Default value
-    });
-    console.log("Firestore user document created successfully!");
-  } catch (error) {
-    console.error("Error creating user document in Firestore:", error);
+  const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+  // Update display name only if provided
+  if (name && name.trim()) {
+    await updateProfile(userCredential.user, { displayName: name.trim() });
   }
-
-  return user;
+  // Create or merge user profile in Firestore
+  try {
+    const { uid, displayName } = userCredential.user || {};
+    await setDoc(
+      doc(db, "users", uid),
+      {
+        uid,
+        email: email,
+        displayName: (name && name.trim()) || displayName || null,
+        createdAt: serverTimestamp(),
+        lastLoginAt: serverTimestamp(),
+        provider: "password",
+      },
+      { merge: true }
+    );
+  } catch (e) {
+    console.warn("Failed to create user profile:", e);
+  }
+  return userCredential.user;
 }
 
 // -------------------------------------------------------------
@@ -150,3 +169,4 @@ export function authErrorMessage(error) {
 
   return map[code] || "Something went wrong. Please try again.";
 }
+
